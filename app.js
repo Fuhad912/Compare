@@ -1,14 +1,5 @@
-const radarLabels = [
-  "Goals",
-  "Assists",
-  "Appearances",
-  "Minutes",
-  "Rating",
-  "Key Passes",
-  "Dribbles"
-];
-
 const SEARCH_DEBOUNCE_MS = 300;
+const EMPTY_PHOTO_DATA_URI = "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==";
 const PLAYER_SEARCH_CONFIG = [
   {
     inputId: "player-a",
@@ -21,119 +12,68 @@ const PLAYER_SEARCH_CONFIG = [
     dropdownId: "player-b-dropdown"
   }
 ];
-const EMPTY_PHOTO_DATA_URI = "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==";
 const STAT_DEFINITIONS = [
-  { key: "goals", label: "Goals", radarKey: "Goals" },
-  { key: "assists", label: "Assists", radarKey: "Assists" },
-  { key: "appearances", label: "Appearances", radarKey: "Appearances" },
-  { key: "minutes", label: "Minutes", radarKey: "Minutes" },
-  { key: "rating", label: "Rating", radarKey: "Rating" },
-  { key: "keyPasses", label: "Key Passes", radarKey: "Key Passes" },
-  { key: "dribbles", label: "Dribbles", radarKey: "Dribbles" }
+  { key: "goals", label: "Goals" },
+  { key: "assists", label: "Assists" },
+  { key: "appearances", label: "Appearances" },
+  { key: "minutes", label: "Minutes" },
+  { key: "rating", label: "Rating" },
+  { key: "keyPasses", label: "Key Passes" },
+  { key: "dribbles", label: "Dribbles" }
 ];
 
-let radarChartInstance = null;
 const appState = {
   playerA: null,
   playerB: null,
   comparison: null
 };
 
-function normalizeRadarData(data = {}) {
-  return radarLabels.map((label) => Number(data[label]) || 0);
+function toNumber(value, fallback = 0) {
+  if (value === null || value === undefined || value === "") {
+    return fallback;
+  }
+
+  const numericValue = Number(value);
+  return Number.isFinite(numericValue) ? numericValue : fallback;
 }
 
-function initRadarChart() {
-  const radarCanvas = document.getElementById("radarChart");
-
-  if (!radarCanvas || typeof Chart === "undefined") {
-    return;
-  }
-
-  const context = radarCanvas.getContext("2d");
-  if (!context) {
-    return;
-  }
-
-  if (radarChartInstance) {
-    radarChartInstance.destroy();
-  }
-
-  radarChartInstance = new Chart(context, {
-    type: "radar",
-    data: {
-      labels: radarLabels,
-      datasets: [
-        {
-          label: "Player A",
-          data: normalizeRadarData(),
-          borderColor: "#763948",
-          backgroundColor: "rgba(118, 57, 72, 0.18)",
-          pointBackgroundColor: "#763948",
-          pointBorderColor: "#D6CCD0",
-          pointRadius: 3
-        },
-        {
-          label: "Player B",
-          data: normalizeRadarData(),
-          borderColor: "rgba(118, 57, 72, 0.7)",
-          backgroundColor: "rgba(118, 57, 72, 0.08)",
-          pointBackgroundColor: "rgba(118, 57, 72, 0.7)",
-          pointBorderColor: "#D6CCD0",
-          pointRadius: 3
-        }
-      ]
-    },
-    options: {
-      responsive: true,
-      maintainAspectRatio: true,
-      scales: {
-        r: {
-          angleLines: {
-            color: "rgba(118, 57, 72, 0.2)"
-          },
-          grid: {
-            color: "rgba(118, 57, 72, 0.2)"
-          },
-          pointLabels: {
-            color: "#763948",
-            font: {
-              family: "Avenir Next, Segoe UI, Helvetica Neue, sans-serif",
-              size: 12
-            }
-          },
-          ticks: {
-            backdropColor: "rgba(214, 204, 208, 0.75)",
-            color: "#763948"
-          }
-        }
-      },
-      plugins: {
-        legend: {
-          labels: {
-            color: "#763948",
-            font: {
-              family: "Avenir Next, Segoe UI, Helvetica Neue, sans-serif"
-            }
-          }
-        }
-      }
-    }
-  });
+function escapeHtml(value) {
+  return String(value)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
 }
 
-function updateRadarChart(playerAData, playerBData) {
-  if (!radarChartInstance) {
-    initRadarChart();
+function prefersReducedMotion() {
+  return window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+}
+
+function parseSeasonForApi(seasonLabel) {
+  const normalized = String(seasonLabel || "").trim();
+  const pairMatch = /^(\d{2})\/(\d{2})$/.exec(normalized);
+
+  if (pairMatch) {
+    const startYY = Number(pairMatch[1]);
+    const startYear = startYY >= 90 ? 1900 + startYY : 2000 + startYY;
+    return {
+      label: normalized,
+      startYear
+    };
   }
 
-  if (!radarChartInstance) {
-    return;
+  if (/^\d{4}$/.test(normalized)) {
+    return {
+      label: normalized,
+      startYear: Number(normalized)
+    };
   }
 
-  radarChartInstance.data.datasets[0].data = normalizeRadarData(playerAData);
-  radarChartInstance.data.datasets[1].data = normalizeRadarData(playerBData);
-  radarChartInstance.update();
+  return {
+    label: normalized,
+    startYear: NaN
+  };
 }
 
 function createDropdown(controller) {
@@ -160,16 +100,6 @@ function clearDropdown(controller) {
   controller.input.removeAttribute("aria-activedescendant");
 }
 
-function openDropdown(controller) {
-  if (!controller.suggestions.length) {
-    closeDropdown(controller);
-    return;
-  }
-
-  controller.dropdown.classList.remove("is-hidden");
-  controller.input.setAttribute("aria-expanded", "true");
-}
-
 function closeDropdown(controller) {
   controller.dropdown.classList.add("is-hidden");
   controller.input.setAttribute("aria-expanded", "false");
@@ -181,6 +111,16 @@ function closeDropdown(controller) {
     item.classList.remove("is-active");
     item.setAttribute("aria-selected", "false");
   });
+}
+
+function openDropdown(controller) {
+  if (!controller.suggestions.length) {
+    closeDropdown(controller);
+    return;
+  }
+
+  controller.dropdown.classList.remove("is-hidden");
+  controller.input.setAttribute("aria-expanded", "true");
 }
 
 function setActiveOption(controller, index) {
@@ -244,15 +184,6 @@ function selectPlayer(controller, index) {
   closeDropdown(controller);
 }
 
-function toNumber(value, fallback = 0) {
-  if (value === null || value === undefined || value === "") {
-    return fallback;
-  }
-
-  const numericValue = Number(value);
-  return Number.isFinite(numericValue) ? numericValue : fallback;
-}
-
 function buildPlayerOption(player, index, controller) {
   const item = document.createElement("li");
   item.className = "search-item";
@@ -278,8 +209,8 @@ function buildPlayerOption(player, index, controller) {
 
   const meta = document.createElement("span");
   meta.className = "search-meta";
-  const parsedAge = toNumber(player.age, NaN);
-  const ageText = Number.isFinite(parsedAge) ? `Age ${Math.round(parsedAge)}` : "Age n/a";
+  const age = toNumber(player.age, NaN);
+  const ageText = Number.isFinite(age) ? `Age ${Math.round(age)}` : "Age n/a";
   meta.textContent = `${player.nationality || "Unknown nationality"} | ${ageText}`;
 
   textWrap.append(name, meta);
@@ -307,11 +238,9 @@ function renderSuggestions(controller, players) {
 
   controller.suggestions = players;
   const fragment = document.createDocumentFragment();
-
   players.forEach((player, index) => {
     fragment.appendChild(buildPlayerOption(player, index, controller));
   });
-
   controller.dropdown.appendChild(fragment);
   openDropdown(controller);
 }
@@ -322,7 +251,7 @@ async function searchPlayers(controller, query) {
   try {
     const response = await fetch(`/api/searchPlayer?q=${encodeURIComponent(query)}`);
     if (!response.ok) {
-      throw new Error(`Search failed with status ${response.status}`);
+      throw new Error("Search request failed.");
     }
 
     const payload = await response.json();
@@ -332,7 +261,7 @@ async function searchPlayers(controller, query) {
 
     const players = Array.isArray(payload?.players) ? payload.players : [];
     renderSuggestions(controller, players);
-  } catch (error) {
+  } catch {
     if (requestId !== controller.requestId) {
       return;
     }
@@ -439,128 +368,6 @@ function setupOutsideClickClose(controllers) {
   });
 }
 
-function escapeHtml(value) {
-  return String(value)
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#39;");
-}
-
-function ensureResultsUI() {
-  const section = document.getElementById("results");
-  const chartCanvas = document.getElementById("radarChart");
-
-  if (!section || !chartCanvas) {
-    return null;
-  }
-
-  let statusText = section.querySelector(".results-status");
-  if (!statusText) {
-    statusText = section.querySelector("p") || document.createElement("p");
-    statusText.classList.add("results-status");
-    if (!statusText.parentElement) {
-      section.insertBefore(statusText, chartCanvas);
-    }
-  }
-
-  let scoreBlock = section.querySelector(".compare-score");
-  if (!scoreBlock) {
-    scoreBlock = document.createElement("div");
-    scoreBlock.className = "compare-score is-hidden";
-    section.insertBefore(scoreBlock, chartCanvas);
-  }
-
-  let comparisonPanel = section.querySelector(".comparison-panel");
-  if (!comparisonPanel) {
-    comparisonPanel = document.createElement("div");
-    comparisonPanel.className = "comparison-panel is-hidden";
-    section.insertBefore(comparisonPanel, chartCanvas);
-  }
-
-  return {
-    section,
-    statusText,
-    scoreBlock,
-    comparisonPanel
-  };
-}
-
-function setResultsStatus(ui, variant, message) {
-  ui.statusText.className = `results-status results-status-${variant}`;
-  ui.statusText.textContent = message;
-}
-
-function prefersReducedMotion() {
-  return window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-}
-
-function scrollResultsIntoView(resultsSection) {
-  if (!resultsSection) {
-    return;
-  }
-
-  const rect = resultsSection.getBoundingClientRect();
-  const topThreshold = window.innerHeight * 0.28;
-  const alreadyNearTop = rect.top >= 0 && rect.top <= topThreshold;
-
-  if (alreadyNearTop) {
-    return;
-  }
-
-  resultsSection.scrollIntoView({
-    behavior: prefersReducedMotion() ? "auto" : "smooth",
-    block: "start"
-  });
-}
-
-function setCompareButtonLoading(button, isLoading) {
-  if (!button) {
-    return;
-  }
-
-  if (!button.dataset.defaultText) {
-    button.dataset.defaultText = button.textContent.trim();
-  }
-
-  button.disabled = isLoading;
-  button.textContent = isLoading ? "Comparing..." : button.dataset.defaultText;
-}
-
-function renderLoadingPanel(ui, playerA, playerB) {
-  const playerAName = escapeHtml(playerA?.name || "Player A");
-  const playerBName = escapeHtml(playerB?.name || "Player B");
-  const loadingCards = STAT_DEFINITIONS.map(
-    () => `
-      <article class="stat-card stat-card-loading" aria-hidden="true">
-        <span class="skeleton-line skeleton-line-label"></span>
-        <span class="skeleton-line skeleton-line-value"></span>
-      </article>
-    `
-  ).join("");
-
-  ui.comparisonPanel.innerHTML = `
-    <div class="comparison-heading-row">
-      <div class="comparison-player comparison-player-a">
-        <span class="comparison-player-tag">Player A</span>
-        <span class="comparison-player-name">${playerAName}</span>
-      </div>
-      <span class="comparison-versus">vs</span>
-      <div class="comparison-player comparison-player-b">
-        <span class="comparison-player-tag">Player B</span>
-        <span class="comparison-player-name">${playerBName}</span>
-      </div>
-    </div>
-    <div class="stats-grid">
-      ${loadingCards}
-    </div>
-  `;
-
-  ui.comparisonPanel.classList.remove("is-hidden");
-  ui.scoreBlock.classList.add("is-hidden");
-}
-
 function getValueByPath(source, path) {
   return path.split(".").reduce((accumulator, key) => {
     if (accumulator && typeof accumulator === "object" && key in accumulator) {
@@ -602,12 +409,12 @@ function extractStatsSource(payload) {
 
   const firstResponse = Array.isArray(payload.response) ? payload.response[0] : null;
   if (firstResponse && typeof firstResponse === "object") {
-    if (firstResponse.stats && typeof firstResponse.stats === "object") {
-      return firstResponse.stats;
-    }
-
     if (Array.isArray(firstResponse.statistics) && firstResponse.statistics[0]) {
       return firstResponse.statistics[0];
+    }
+
+    if (firstResponse.stats && typeof firstResponse.stats === "object") {
+      return firstResponse.stats;
     }
 
     return firstResponse;
@@ -630,16 +437,40 @@ function normalizeStats(rawStats) {
   };
 }
 
-function toRadarDataset(stats) {
+function ensureResultsUI() {
   return {
-    Goals: stats.goals,
-    Assists: stats.assists,
-    Appearances: stats.appearances,
-    Minutes: stats.minutes,
-    Rating: stats.rating,
-    "Key Passes": stats.keyPasses,
-    Dribbles: stats.dribbles
+    section: document.getElementById("results"),
+    status: document.getElementById("results-status"),
+    winnerPanel: document.getElementById("winner-panel"),
+    board: document.getElementById("h2h-board")
   };
+}
+
+function setResultsStatus(ui, variant, message) {
+  ui.status.className = `results-status results-status-${variant}`;
+  ui.status.textContent = message;
+}
+
+function setCompareButtonLoading(button, isLoading) {
+  if (!button.dataset.defaultText) {
+    button.dataset.defaultText = button.textContent.trim();
+  }
+
+  button.disabled = isLoading;
+  button.textContent = isLoading ? "Running comparison..." : button.dataset.defaultText;
+}
+
+function scrollResultsIntoView(section) {
+  const rect = section.getBoundingClientRect();
+  const alreadyVisible = rect.top >= 0 && rect.top <= window.innerHeight * 0.3;
+  if (alreadyVisible) {
+    return;
+  }
+
+  section.scrollIntoView({
+    behavior: prefersReducedMotion() ? "auto" : "smooth",
+    block: "start"
+  });
 }
 
 function formatStatValue(metricKey, value) {
@@ -654,58 +485,49 @@ function formatStatValue(metricKey, value) {
   return value.toFixed(1);
 }
 
-function renderPlayerBlock(sideLabel, player, sideClass) {
+function renderPlayerChip(sideLabel, player, sideClass) {
   const name = escapeHtml(player?.name || sideLabel);
-  const photoSrc = player?.photo ? escapeHtml(player.photo) : null;
+  const photo = player?.photo ? escapeHtml(player.photo) : "";
 
-  if (!photoSrc) {
+  if (!photo) {
     return `
-      <div class="comparison-player ${sideClass}">
-        <span class="comparison-avatar comparison-avatar-fallback" aria-hidden="true">${escapeHtml(sideLabel)}</span>
-        <span class="comparison-player-name">${name}</span>
+      <div class="board-player ${sideClass}">
+        <span class="board-avatar board-avatar-fallback">${escapeHtml(sideLabel)}</span>
+        <span class="board-player-name">${name}</span>
       </div>
     `;
   }
 
   return `
-    <div class="comparison-player ${sideClass}">
-      <img class="comparison-avatar" src="${photoSrc}" alt="" loading="lazy" referrerpolicy="no-referrer" />
-      <span class="comparison-player-name">${name}</span>
+    <div class="board-player ${sideClass}">
+      <img class="board-avatar" src="${photo}" alt="" loading="lazy" referrerpolicy="no-referrer" />
+      <span class="board-player-name">${name}</span>
     </div>
   `;
 }
 
-function renderComparisonPanel(ui, playerA, playerB, statsA, statsB) {
-  const statCards = STAT_DEFINITIONS.map((metric) => {
-    const valueA = statsA[metric.key];
-    const valueB = statsB[metric.key];
-    const leadClassA = valueA > valueB ? "is-leading" : "";
-    const leadClassB = valueB > valueA ? "is-leading" : "";
-
-    return `
-      <article class="stat-card">
-        <p class="stat-label">${escapeHtml(metric.label)}</p>
-        <div class="stat-values">
-          <span class="stat-value ${leadClassA}">${escapeHtml(formatStatValue(metric.key, valueA))}</span>
-          <span class="stat-divider">|</span>
-          <span class="stat-value ${leadClassB}">${escapeHtml(formatStatValue(metric.key, valueB))}</span>
-        </div>
+function renderLoadingBoard(ui, playerA, playerB, seasonLabel) {
+  const loadingRows = STAT_DEFINITIONS.map(
+    () => `
+      <article class="metric-row metric-row-loading">
+        <span class="metric-loading"></span>
       </article>
-    `;
-  }).join("");
+    `
+  ).join("");
 
-  ui.comparisonPanel.innerHTML = `
-    <div class="comparison-heading-row">
-      ${renderPlayerBlock("A", playerA, "comparison-player-a")}
-      <span class="comparison-versus">vs</span>
-      ${renderPlayerBlock("B", playerB, "comparison-player-b")}
+  ui.board.innerHTML = `
+    <div class="board-head">
+      ${renderPlayerChip("A", playerA, "board-player-a")}
+      <span class="board-season">${escapeHtml(seasonLabel)}</span>
+      ${renderPlayerChip("B", playerB, "board-player-b")}
     </div>
-    <div class="stats-grid">
-      ${statCards}
+    <div class="metrics-wrap">
+      ${loadingRows}
     </div>
   `;
 
-  ui.comparisonPanel.classList.remove("is-hidden");
+  ui.board.classList.remove("is-hidden");
+  ui.winnerPanel.classList.add("is-hidden");
 }
 
 function computeCompareScore(stats) {
@@ -719,59 +541,57 @@ function computeCompareScore(stats) {
   );
 }
 
-function computePercentDifference(a, b) {
+function computeDifferencePercent(a, b) {
   const baseline = Math.max(Math.abs(a), Math.abs(b), 1);
   return (Math.abs(a - b) / baseline) * 100;
 }
 
-function buildScoreInterpretation(diffPercent, winnerName, isTie) {
+function buildInterpretation(diffPercent, winnerName, isTie) {
   if (isTie) {
-    return "Both players are level on this season profile.";
+    return "Both profiles are balanced across this season.";
   }
 
   if (diffPercent < 5) {
-    return `${winnerName} holds a narrow edge across key outputs.`;
+    return `${winnerName} edges this matchup by a very small margin.`;
   }
 
   if (diffPercent < 15) {
-    return `${winnerName} shows a clear all-round advantage in this comparison.`;
+    return `${winnerName} has a clear statistical advantage in key actions.`;
   }
 
-  return `${winnerName} is decisively ahead based on the selected metrics.`;
+  return `${winnerName} dominates this comparison based on current metrics.`;
 }
 
-function renderScoreSummary(ui, playerA, playerB, statsA, statsB) {
+function renderWinnerPanel(ui, playerA, playerB, statsA, statsB) {
   const scoreA = computeCompareScore(statsA);
   const scoreB = computeCompareScore(statsB);
   const isTie = Math.abs(scoreA - scoreB) < 0.0001;
-  const diffPercent = computePercentDifference(scoreA, scoreB);
+  const diffPercent = computeDifferencePercent(scoreA, scoreB);
 
   let badgeClass = "winner-badge winner-badge-tie";
   let badgeText = "Draw";
   let winnerName = "Neither player";
 
   if (!isTie && scoreA > scoreB) {
-    badgeClass = "winner-badge winner-badge-a";
     winnerName = playerA?.name || "Player A";
-    badgeText = `${escapeHtml(winnerName)} leads`;
+    badgeText = `${escapeHtml(winnerName)} wins`;
+    badgeClass = "winner-badge winner-badge-a";
   } else if (!isTie && scoreB > scoreA) {
-    badgeClass = "winner-badge winner-badge-b";
     winnerName = playerB?.name || "Player B";
-    badgeText = `${escapeHtml(winnerName)} leads`;
+    badgeText = `${escapeHtml(winnerName)} wins`;
+    badgeClass = "winner-badge winner-badge-b";
   }
 
-  const interpretation = buildScoreInterpretation(diffPercent, winnerName, isTie);
-  const diffLabel = isTie ? "0.0%" : `${diffPercent.toFixed(1)}%`;
-  const scoreLine = `${scoreA.toFixed(1)} | ${scoreB.toFixed(1)}`;
+  const interpretation = buildInterpretation(diffPercent, winnerName, isTie);
 
-  ui.scoreBlock.innerHTML = `
+  ui.winnerPanel.innerHTML = `
     <div class="${badgeClass}">${badgeText}</div>
-    <p class="score-line">Compare Score: ${escapeHtml(scoreLine)}</p>
-    <p class="score-diff">Difference: ${escapeHtml(diffLabel)}</p>
-    <p class="score-interpretation">${escapeHtml(interpretation)}</p>
+    <p class="winner-score-line">Compare Score: ${escapeHtml(scoreA.toFixed(1))} | ${escapeHtml(scoreB.toFixed(1))}</p>
+    <p class="winner-diff-line">Difference: ${escapeHtml(isTie ? "0.0%" : `${diffPercent.toFixed(1)}%`)}</p>
+    <p class="winner-note">${escapeHtml(interpretation)}</p>
   `;
 
-  ui.scoreBlock.classList.remove("is-hidden");
+  ui.winnerPanel.classList.remove("is-hidden");
 
   return {
     scoreA,
@@ -779,6 +599,92 @@ function renderScoreSummary(ui, playerA, playerB, statsA, statsB) {
     diffPercent,
     winner: isTie ? "tie" : scoreA > scoreB ? "playerA" : "playerB"
   };
+}
+
+function renderHeadToHeadBoard(ui, seasonLabel, playerA, playerB, statsA, statsB) {
+  const rows = STAT_DEFINITIONS.map((metric) => {
+    const valueA = statsA[metric.key];
+    const valueB = statsB[metric.key];
+    const maxValue = Math.max(valueA, valueB, 1);
+    const percentA = (valueA / maxValue) * 100;
+    const percentB = (valueB / maxValue) * 100;
+    const classA = valueA > valueB ? "is-leading" : "";
+    const classB = valueB > valueA ? "is-leading" : "";
+
+    return `
+      <article class="metric-row">
+        <span class="metric-value metric-value-a ${classA}">${escapeHtml(formatStatValue(metric.key, valueA))}</span>
+        <div class="metric-core">
+          <p class="metric-label">${escapeHtml(metric.label)}</p>
+          <div class="metric-bars">
+            <span class="metric-bar metric-bar-a" style="--bar-width:${percentA.toFixed(2)}%"></span>
+            <span class="metric-bar metric-bar-b" style="--bar-width:${percentB.toFixed(2)}%"></span>
+          </div>
+        </div>
+        <span class="metric-value metric-value-b ${classB}">${escapeHtml(formatStatValue(metric.key, valueB))}</span>
+      </article>
+    `;
+  }).join("");
+
+  ui.board.innerHTML = `
+    <div class="board-head">
+      ${renderPlayerChip("A", playerA, "board-player-a")}
+      <span class="board-season">${escapeHtml(seasonLabel)}</span>
+      ${renderPlayerChip("B", playerB, "board-player-b")}
+    </div>
+    <div class="metrics-wrap">
+      ${rows}
+    </div>
+  `;
+
+  ui.board.classList.remove("is-hidden");
+}
+
+function animateIntro() {
+  if (prefersReducedMotion() || typeof window.gsap === "undefined") {
+    return;
+  }
+
+  window.gsap.from(".hero", {
+    opacity: 0,
+    y: 24,
+    duration: 0.6,
+    ease: "power2.out"
+  });
+
+  window.gsap.from(".compare-card", {
+    opacity: 0,
+    y: 20,
+    duration: 0.55,
+    ease: "power2.out",
+    delay: 0.08
+  });
+
+  window.gsap.from(".about-inner", {
+    opacity: 0,
+    y: 16,
+    duration: 0.5,
+    ease: "power2.out",
+    delay: 0.18
+  });
+}
+
+function animateResults() {
+  if (prefersReducedMotion() || typeof window.gsap === "undefined") {
+    return;
+  }
+
+  window.gsap.fromTo(
+    "#winner-panel",
+    { opacity: 0, y: 14 },
+    { opacity: 1, y: 0, duration: 0.42, ease: "power2.out" }
+  );
+
+  window.gsap.fromTo(
+    ".metric-row",
+    { opacity: 0, y: 12 },
+    { opacity: 1, y: 0, duration: 0.35, stagger: 0.05, ease: "power2.out", delay: 0.05 }
+  );
 }
 
 async function parseJsonSafe(response) {
@@ -789,22 +695,27 @@ async function parseJsonSafe(response) {
   }
 }
 
-async function fetchPlayerStats(playerId, season) {
+async function fetchPlayerStats(playerId, seasonLabel) {
+  const season = parseSeasonForApi(seasonLabel);
+  if (!Number.isFinite(season.startYear)) {
+    throw new Error("Invalid season selected.");
+  }
+
   const query = new URLSearchParams({
     playerId: String(playerId),
-    player: String(playerId),
-    season: String(season)
+    season: String(season.startYear),
+    seasonLabel: season.label
   });
 
   const response = await fetch(`/api/playerStats?${query.toString()}`);
   const payload = await parseJsonSafe(response);
 
   if (!response.ok) {
-    const errorMessage =
+    const message =
       payload?.error ||
       payload?.message ||
       `Unable to load player stats (HTTP ${response.status}).`;
-    throw new Error(errorMessage);
+    throw new Error(message);
   }
 
   const statsSource = extractStatsSource(payload);
@@ -820,8 +731,16 @@ function validateCompareInput(seasonValue) {
     return "Select Player B from the dropdown before comparing.";
   }
 
+  if (appState.playerA.id === appState.playerB.id) {
+    return "Pick two different players for a valid head-to-head.";
+  }
+
   if (!seasonValue) {
-    return "Choose a season before running a comparison.";
+    return "Choose a season before comparing.";
+  }
+
+  if (!Number.isFinite(parseSeasonForApi(seasonValue).startYear)) {
+    return "Season format should be like 23/24.";
   }
 
   return "";
@@ -831,23 +750,16 @@ async function handleCompareSubmit(event, context) {
   event.preventDefault();
 
   const { seasonSelect, compareButton, resultsUi } = context;
-  if (!resultsUi) {
-    return;
-  }
+  const seasonValue = (seasonSelect?.value || "").trim();
 
   resultsUi.section.classList.remove("is-hidden");
   scrollResultsIntoView(resultsUi.section);
-  if (radarChartInstance) {
-    radarChartInstance.resize();
-  }
 
-  const seasonValue = (seasonSelect?.value || "").trim();
   const validationMessage = validateCompareInput(seasonValue);
-
   if (validationMessage) {
     setResultsStatus(resultsUi, "error", validationMessage);
-    resultsUi.comparisonPanel.classList.add("is-hidden");
-    resultsUi.scoreBlock.classList.add("is-hidden");
+    resultsUi.winnerPanel.classList.add("is-hidden");
+    resultsUi.board.classList.add("is-hidden");
     return;
   }
 
@@ -855,9 +767,9 @@ async function handleCompareSubmit(event, context) {
   setResultsStatus(
     resultsUi,
     "loading",
-    `Comparing ${appState.playerA.name} and ${appState.playerB.name} in ${seasonValue}...`
+    `Comparing ${appState.playerA.name} vs ${appState.playerB.name} for ${seasonValue}...`
   );
-  renderLoadingPanel(resultsUi, appState.playerA, appState.playerB);
+  renderLoadingBoard(resultsUi, appState.playerA, appState.playerB, seasonValue);
 
   try {
     const [statsA, statsB] = await Promise.all([
@@ -865,38 +777,33 @@ async function handleCompareSubmit(event, context) {
       fetchPlayerStats(appState.playerB.id, seasonValue)
     ]);
 
-    renderComparisonPanel(resultsUi, appState.playerA, appState.playerB, statsA, statsB);
-    const scoreMeta = renderScoreSummary(resultsUi, appState.playerA, appState.playerB, statsA, statsB);
+    renderHeadToHeadBoard(resultsUi, seasonValue, appState.playerA, appState.playerB, statsA, statsB);
+    const summary = renderWinnerPanel(resultsUi, appState.playerA, appState.playerB, statsA, statsB);
 
     appState.comparison = {
       season: seasonValue,
       statsA,
       statsB,
-      score: scoreMeta
+      summary
     };
 
-    updateRadarChart(toRadarDataset(statsA), toRadarDataset(statsB));
-    if (radarChartInstance) {
-      radarChartInstance.resize();
-    }
-
-    setResultsStatus(resultsUi, "success", "Comparison complete.");
+    setResultsStatus(resultsUi, "success", "Head-to-head complete.");
+    animateResults();
   } catch (error) {
-    resultsUi.comparisonPanel.classList.add("is-hidden");
-    resultsUi.scoreBlock.classList.add("is-hidden");
+    resultsUi.winnerPanel.classList.add("is-hidden");
+    resultsUi.board.classList.add("is-hidden");
     setResultsStatus(
       resultsUi,
       "error",
-      error instanceof Error ? error.message : "Comparison failed. Please try again."
+      error instanceof Error ? error.message : "Comparison failed. Try again."
     );
-    updateRadarChart({}, {});
   } finally {
     setCompareButtonLoading(compareButton, false);
   }
 }
 
 document.addEventListener("DOMContentLoaded", () => {
-  initRadarChart();
+  animateIntro();
 
   const searchControllers = PLAYER_SEARCH_CONFIG.map(setupSearchInput).filter(Boolean);
   setupOutsideClickClose(searchControllers);

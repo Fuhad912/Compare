@@ -76,6 +76,34 @@ function parseSeasonForApi(seasonLabel) {
   };
 }
 
+function findBestPlayerMatch(query, players) {
+  if (!Array.isArray(players) || players.length === 0) {
+    return null;
+  }
+
+  const normalizedQuery = String(query || "").trim().toLowerCase();
+  if (!normalizedQuery) {
+    return players[0];
+  }
+
+  const exactMatch = players.find((player) => String(player?.name || "").toLowerCase() === normalizedQuery);
+  if (exactMatch) {
+    return exactMatch;
+  }
+
+  const startsWithMatch = players.find((player) => String(player?.name || "").toLowerCase().startsWith(normalizedQuery));
+  if (startsWithMatch) {
+    return startsWithMatch;
+  }
+
+  const includesMatch = players.find((player) => String(player?.name || "").toLowerCase().includes(normalizedQuery));
+  if (includesMatch) {
+    return includesMatch;
+  }
+
+  return players[0];
+}
+
 function createDropdown(controller) {
   const dropdown = document.createElement("ul");
   dropdown.id = controller.dropdownId;
@@ -722,19 +750,50 @@ async function fetchPlayerStats(playerId, seasonLabel) {
   return normalizeStats(statsSource);
 }
 
+async function resolvePlayerSelectionFromInput(stateKey, inputId, label) {
+  const existingSelection = appState[stateKey];
+  if (existingSelection && existingSelection.id) {
+    return existingSelection;
+  }
+
+  const input = document.getElementById(inputId);
+  const query = String(input?.value || "").trim();
+
+  if (!query) {
+    throw new Error(`${label} is empty. Type a player name first.`);
+  }
+
+  const response = await fetch(`/api/searchPlayer?q=${encodeURIComponent(query)}`);
+  const payload = await parseJsonSafe(response);
+
+  if (!response.ok) {
+    throw new Error(`Unable to resolve ${label}. Try searching again.`);
+  }
+
+  const players = Array.isArray(payload?.players) ? payload.players : [];
+  const selectedPlayer = findBestPlayerMatch(query, players);
+
+  if (!selectedPlayer || !selectedPlayer.id) {
+    throw new Error(`No player found for ${label}. Try a more specific name.`);
+  }
+
+  const normalizedSelection = {
+    id: selectedPlayer.id,
+    name: selectedPlayer.name || query,
+    photo: selectedPlayer.photo || null
+  };
+
+  appState[stateKey] = normalizedSelection;
+
+  if (input) {
+    input.value = normalizedSelection.name;
+    input.dataset.playerId = String(normalizedSelection.id);
+  }
+
+  return normalizedSelection;
+}
+
 function validateCompareInput(seasonValue) {
-  if (!appState.playerA || !appState.playerA.id) {
-    return "Select Player A from the dropdown before comparing.";
-  }
-
-  if (!appState.playerB || !appState.playerB.id) {
-    return "Select Player B from the dropdown before comparing.";
-  }
-
-  if (appState.playerA.id === appState.playerB.id) {
-    return "Pick two different players for a valid head-to-head.";
-  }
-
   if (!seasonValue) {
     return "Choose a season before comparing.";
   }
@@ -764,21 +823,31 @@ async function handleCompareSubmit(event, context) {
   }
 
   setCompareButtonLoading(compareButton, true);
-  setResultsStatus(
-    resultsUi,
-    "loading",
-    `Comparing ${appState.playerA.name} vs ${appState.playerB.name} for ${seasonValue}...`
-  );
-  renderLoadingBoard(resultsUi, appState.playerA, appState.playerB, seasonValue);
 
   try {
-    const [statsA, statsB] = await Promise.all([
-      fetchPlayerStats(appState.playerA.id, seasonValue),
-      fetchPlayerStats(appState.playerB.id, seasonValue)
+    const [resolvedPlayerA, resolvedPlayerB] = await Promise.all([
+      resolvePlayerSelectionFromInput("playerA", "player-a", "Player A"),
+      resolvePlayerSelectionFromInput("playerB", "player-b", "Player B")
     ]);
 
-    renderHeadToHeadBoard(resultsUi, seasonValue, appState.playerA, appState.playerB, statsA, statsB);
-    const summary = renderWinnerPanel(resultsUi, appState.playerA, appState.playerB, statsA, statsB);
+    if (resolvedPlayerA.id === resolvedPlayerB.id) {
+      throw new Error("Pick two different players for a valid head-to-head.");
+    }
+
+    setResultsStatus(
+      resultsUi,
+      "loading",
+      `Comparing ${resolvedPlayerA.name} vs ${resolvedPlayerB.name} for ${seasonValue}...`
+    );
+    renderLoadingBoard(resultsUi, resolvedPlayerA, resolvedPlayerB, seasonValue);
+
+    const [statsA, statsB] = await Promise.all([
+      fetchPlayerStats(resolvedPlayerA.id, seasonValue),
+      fetchPlayerStats(resolvedPlayerB.id, seasonValue)
+    ]);
+
+    renderHeadToHeadBoard(resultsUi, seasonValue, resolvedPlayerA, resolvedPlayerB, statsA, statsB);
+    const summary = renderWinnerPanel(resultsUi, resolvedPlayerA, resolvedPlayerB, statsA, statsB);
 
     appState.comparison = {
       season: seasonValue,

@@ -1,0 +1,65 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Comparé</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <main class="page-shell">
+    <section class="hero" aria-labelledby="hero-title">
+      <p class="brand-mark">Comparé</p>
+      <h1 id="hero-title">Comparé</h1>
+      <p class="hero-subtitle">Football Comparison Engine.</p>
+    </section>
+
+    <section class="compare-card" aria-labelledby="compare-heading">
+      <h2 id="compare-heading">Compare Players</h2>
+      <form id="compare-form" class="compare-form" novalidate>
+        <label for="player-a">Player A</label>
+        <input id="player-a" name="playerA" type="search" placeholder="Search player" required />
+
+        <label for="player-b">Player B</label>
+        <input id="player-b" name="playerB" type="search" placeholder="Search player" required />
+
+        <label for="season">Season</label>
+        <select id="season" name="season" required>
+          <option value="2020">2020</option>
+          <option value="2021">2021</option>
+          <option value="2022">2022</option>
+          <option value="2023">2023</option>
+          <option value="2024">2024</option>
+          <option value="2025">2025</option>
+          <option value="2026">2026</option>
+        </select>
+
+        <button type="submit">Compare</button>
+      </form>
+    </section>
+
+    <section id="results" class="results is-hidden" aria-live="polite">
+      <h2>Results</h2>
+      <p>Comparison output will appear here.</p>
+      <canvas id="radarChart" aria-label="Player comparison radar chart" role="img"></canvas>
+    </section>
+  </main>
+
+  <section class="about" id="about" aria-labelledby="about-heading">
+    <div class="about-inner">
+      <h2 id="about-heading">About Comparé</h2>
+      <p>
+        Comparé is a focused football comparison experience designed to place two players side by side across a selected season.
+        The goal is fast, clear decision support for fans, analysts, and curious observers.
+      </p>
+      <p>
+        Tech stack: semantic HTML for structure, modern CSS for presentation, vanilla JavaScript for interaction,
+        and an <code>api/</code> directory prepared for Vercel serverless functions.
+      </p>
+    </div>
+  </section>
+
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

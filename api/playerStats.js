@@ -77,12 +77,33 @@ module.exports = async function handler(req, res) {
   }
 
   const apiKey = process.env.APISPORTS_KEY;
+  const rawBaseUrl = process.env.APISPORTS_BASE_URL;
+  const envDebug = {
+    APISPORTS_KEY: apiKey ? "present" : "undefined",
+    APISPORTS_BASE_URL: rawBaseUrl === undefined ? "undefined" : rawBaseUrl,
+    usingDefaultBaseUrl: rawBaseUrl === undefined || rawBaseUrl === ""
+  };
+
+  console.log("[playerStats] Environment values", envDebug);
+
   if (!apiKey) {
-    return res.status(500).json({ error: "Server configuration error: APISPORTS_KEY is not set." });
+    return res.status(500).json({
+      error: "Server configuration error: APISPORTS_KEY is not set.",
+      debug: { env: envDebug }
+    });
   }
 
-  const baseUrl = (process.env.APISPORTS_BASE_URL || DEFAULT_BASE_URL).replace(/\/+$/, "");
+  const baseUrl = (rawBaseUrl || DEFAULT_BASE_URL).replace(/\/+$/, "");
   const upstreamUrl = `${baseUrl}/players?id=${encodeURIComponent(playerId)}&season=${encodeURIComponent(season.startYear)}`;
+  const requestDebug = {
+    method: "GET",
+    url: upstreamUrl,
+    headers: {
+      "x-apisports-key": apiKey ? "present" : "undefined"
+    }
+  };
+
+  console.log("[playerStats] API-Football request", requestDebug);
 
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
@@ -96,15 +117,52 @@ module.exports = async function handler(req, res) {
       signal: controller.signal
     });
 
+    const upstreamBodyText = await upstreamResponse.text();
+    let upstreamBodyJson = null;
+    if (upstreamBodyText) {
+      try {
+        upstreamBodyJson = JSON.parse(upstreamBodyText);
+      } catch {
+        upstreamBodyJson = null;
+      }
+    }
+
     if (!upstreamResponse.ok) {
-      return res.status(upstreamResponse.status).json({ error: "API-SPORTS stats request failed." });
+      console.error("[playerStats] API-Football non-OK response", {
+        status: upstreamResponse.status,
+        statusText: upstreamResponse.statusText,
+        body: upstreamBodyJson ?? upstreamBodyText
+      });
+      return res.status(upstreamResponse.status).json({
+        error: "API-SPORTS stats request failed.",
+        upstream: {
+          status: upstreamResponse.status,
+          statusText: upstreamResponse.statusText,
+          body: upstreamBodyJson ?? upstreamBodyText
+        },
+        debug: {
+          env: envDebug,
+          request: requestDebug
+        }
+      });
     }
 
     let payload;
     try {
-      payload = await upstreamResponse.json();
+      payload = upstreamBodyJson ?? JSON.parse(upstreamBodyText);
     } catch {
-      return res.status(502).json({ error: "Invalid JSON received from API-SPORTS." });
+      return res.status(502).json({
+        error: "Invalid JSON received from API-SPORTS.",
+        upstream: {
+          status: upstreamResponse.status,
+          statusText: upstreamResponse.statusText,
+          body: upstreamBodyText
+        },
+        debug: {
+          env: envDebug,
+          request: requestDebug
+        }
+      });
     }
 
     const firstResponse = Array.isArray(payload?.response) ? payload.response[0] : null;
@@ -127,10 +185,32 @@ module.exports = async function handler(req, res) {
     });
   } catch (error) {
     if (error && error.name === "AbortError") {
-      return res.status(504).json({ error: "API-SPORTS stats request timed out." });
+      console.error("[playerStats] API-Football request timed out", {
+        message: error.message
+      });
+      return res.status(504).json({
+        error: "API-SPORTS stats request timed out.",
+        details: error.message || null,
+        debug: {
+          env: envDebug,
+          request: requestDebug
+        }
+      });
     }
 
-    return res.status(502).json({ error: "Unable to reach API-SPORTS." });
+    console.error("[playerStats] API-Football request error", {
+      name: error?.name || null,
+      message: error?.message || null
+    });
+
+    return res.status(502).json({
+      error: "Unable to reach API-SPORTS.",
+      details: error?.message || null,
+      debug: {
+        env: envDebug,
+        request: requestDebug
+      }
+    });
   } finally {
     clearTimeout(timeout);
   }

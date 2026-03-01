@@ -27,6 +27,7 @@ const appState = {
   playerB: null,
   comparison: null
 };
+const searchControllersByState = {};
 
 function toNumber(value, fallback = 0) {
   if (value === null || value === undefined || value === "") {
@@ -321,6 +322,7 @@ function setupSearchInput(config) {
     requestId: 0,
     debounceId: null
   };
+  searchControllersByState[config.stateKey] = controller;
 
   createDropdown(controller);
 
@@ -763,11 +765,32 @@ async function resolvePlayerSelectionFromInput(stateKey, inputId, label) {
     throw new Error(`${label} is empty. Type a player name first.`);
   }
 
+  const controller = searchControllersByState[stateKey];
+  const cachedPlayers = Array.isArray(controller?.suggestions) ? controller.suggestions : [];
+  const cachedMatch = findBestPlayerMatch(query, cachedPlayers);
+  if (cachedMatch && cachedMatch.id) {
+    const cachedSelection = {
+      id: cachedMatch.id,
+      name: cachedMatch.name || query,
+      photo: cachedMatch.photo || null
+    };
+
+    appState[stateKey] = cachedSelection;
+
+    if (input) {
+      input.value = cachedSelection.name;
+      input.dataset.playerId = String(cachedSelection.id);
+    }
+
+    return cachedSelection;
+  }
+
   const response = await fetch(`/api/searchPlayer?q=${encodeURIComponent(query)}`);
   const payload = await parseJsonSafe(response);
 
   if (!response.ok) {
-    throw new Error(`Unable to resolve ${label}. Try searching again.`);
+    const backendMessage = payload?.error || payload?.message;
+    throw new Error(backendMessage || `Unable to resolve ${label}. Try searching again.`);
   }
 
   const players = Array.isArray(payload?.players) ? payload.players : [];
